@@ -9,7 +9,7 @@ import org.locationtech.jts.geom.Geometry
 import org.noise_planet.noisemodelling.wps.Acoustic_Tools.Create_Isosurface
 import org.noise_planet.noisemodelling.wps.Database_Manager.Clean_Database
 import org.noise_planet.noisemodelling.wps.Import_and_Export.Export_Table
-import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_OSM_Pbf
+import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_OSM
 import org.noise_planet.noisemodelling.wps.Receivers.Delaunay_Grid
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -49,7 +49,8 @@ class RunMatsimDelaunay {
     static String ignoreAgents = ""
 
     public static void main(String[] args) {
-        runNantesEdgt20p()
+//        runNantesEdgt20p()
+        runLyonEdgt20p()
         // cli(args)
     }
 
@@ -79,6 +80,38 @@ class RunMatsimDelaunay {
         doCreateReceiversGrid = false;
         doCalculateNoisePropagation = false;
         doCalculateNoiseMap = false;
+        doCalculateContourMaps = true;
+        doCalculateExposure = false;
+
+        run(dbName, osmFile, matsimFolder, resultsFolder, srid, populationFactor)
+    }
+
+    public static void runLyonEdgt20p() {
+
+        String dbName = "file:///D:/SYMEXPO/matsim-lyon/edgt_20p/L63V/noisemodelling/noisemodelling_maps"
+        String osmFile = "D:\\SYMEXPO\\osm_maps\\L63V.osm.pbf";
+        String resultsFolder = "D:\\SYMEXPO\\matsim-lyon\\edgt_20p\\L63V\\noisemodelling\\results\\"
+        String matsimFolder = "D:\\SYMEXPO\\matsim-lyon\\edgt_20p\\L63V\\simulation_output\\"
+        String srid = 2154;
+        double populationFactor = 0.20;
+
+//        timeSlice = "hour";
+
+        doCleanDB = false;
+        doImportOSMPbf = false;
+
+        doExportRoads = false;
+        doExportBuildings = false;
+
+        doSimulation = true;
+        doExportResults = false;
+
+        // all flags inside doSimulation
+        doImportMatsimTraffic = true;
+        doCreateReceiversFromMatsim = false;
+        doCreateReceiversGrid = true;
+        doCalculateNoisePropagation = true;
+        doCalculateNoiseMap = true;
         doCalculateContourMaps = true;
         doCalculateExposure = false;
 
@@ -194,7 +227,7 @@ class RunMatsimDelaunay {
             ])
         }
         if (doImportOSMPbf) {
-            new Import_OSM_Pbf().exec(connection, [
+            new Import_OSM().exec(connection, [
                     "pathFile"        : osmFile,
                     "targetSRID"      : srid,
                     "ignoreGround": true,
@@ -226,7 +259,7 @@ class RunMatsimDelaunay {
                 ImportMatsimTraffic.importMatsimTraffic(connection, [
                         "folder"           : matsimFolder,
                         "outTableName"     : "MATSIM_ROADS",
-                        "link2GeometryFile": Paths.get(matsimFolder, "network.csv"), // absolute path
+                        "link2GeometryFile": Paths.get(matsimFolder, "detailed_network.csv"), // absolute path
                         "timeSlice"        : timeSlice, // DEN, hour, quarter
                         "skipUnused"       : "true",
                         "exportTraffic"    : "true",
@@ -281,8 +314,8 @@ class RunMatsimDelaunay {
                         "tableBuilding"     : "BUILDINGS",
                         "tableReceivers"    : "RECEIVERS",
                         "tableSources"      : "SOURCES_0DB",
-                        "confMaxSrcDist"    : 500,
-                        "confMaxReflDist"   : 50,
+                        "confMaxSrcDist"    : 200,
+                        "confMaxReflDist"   : 10,
                         "confReflOrder"     : 1,
                         "confSkipLevening"  : true,
                         "confSkipLnight"    : true,
@@ -412,7 +445,6 @@ class RunMatsimDelaunay {
                     sql.execute(String.format("DROP TABLE %s IF EXISTS", timeDataTable))
                     String query = "CREATE TABLE " + timeDataTable + '''(
                             PK integer PRIMARY KEY AUTO_INCREMENT,
-                            IDRECEIVER integer,
                             THE_GEOM geometry,
                             HZ63 double precision,
                             HZ125 double precision,
@@ -426,19 +458,19 @@ class RunMatsimDelaunay {
                             LAEQ double precision,
                             LEQ double precision
                         )
-                        AS SELECT r.PK, r.IDRECEIVER, r.THE_GEOM, r.HZ63, r.HZ125, r.HZ250, r.HZ500, r.HZ1000, r.HZ2000, r.HZ4000, r.HZ8000, r.TIMESTRING, r.LEQA as LAEQ, r.LEQ
+                        AS SELECT r.IDRECEIVER as PK, r.THE_GEOM, r.HZ63, r.HZ125, r.HZ250, r.HZ500, r.HZ1000, r.HZ2000, r.HZ4000, r.HZ8000, r.TIMESTRING, r.LEQA as LAEQ, r.LEQ
                         FROM ''' + dataTable +  " r WHERE r.LEQA >= 0 AND r.TIMESTRING='" + timestring + "'"
 
                     sql.execute(query)
-//                    new Create_Isosurface().exec(connection, [
-//                        "resultTable": timeDataTable
-//                    ])
+                    new Create_Isosurface().exec(connection, [
+                        "resultTable": timeDataTable
+                    ])
                     sql.execute(String.format("DROP TABLE %s IF EXISTS", contourDataTable))
-//                    sql.execute("ALTER TABLE CONTOURING_NOISE_MAP RENAME TO " + contourDataTable)
-//                    new Export_Table().exec(connection, [
-//                            "tableToExport": contourDataTable,
-//                            "exportPath"   : Paths.get(resultsFolder, contourDataTable + ".geojson")
-//                    ])
+                    sql.execute("ALTER TABLE CONTOURING_NOISE_MAP RENAME TO " + contourDataTable)
+                    new Export_Table().exec(connection, [
+                            "tableToExport": contourDataTable,
+                            "exportPath"   : Paths.get(resultsFolder, contourDataTable + ".geojson")
+                    ])
                     new Export_Table().exec(connection, [
                             "tableToExport": timeDataTable,
                             "exportPath"   : Paths.get(resultsFolder, timeDataTable + ".geojson")

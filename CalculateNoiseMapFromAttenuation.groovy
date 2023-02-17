@@ -21,8 +21,9 @@ class CalculateNoiseMapFromAttenuation {
             "matsimRoads": "MATSIM_ROADS",
             "matsimRoadsStats": "MATSIM_ROADS_STATS",
             "attenuationTable" : "LDAY_GEOM",
-            // "timeString": "6h30_6h45",
             "outTableName" : "RESULT_GEOM",
+            "timeBinSize": 900,
+//            "timeBin": 3600,
         ])
     }
 

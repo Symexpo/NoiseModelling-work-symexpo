@@ -12,7 +12,7 @@ import org.apache.commons.cli.ParseException
 import org.h2gis.functions.factory.H2GISDBFactory
 import org.h2gis.utilities.JDBCUtilities
 import org.noise_planet.noisemodelling.wps.Database_Manager.Clean_Database
-import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_OSM_Pbf
+import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_OSM
 
 import java.nio.file.Paths
 import java.sql.Connection
@@ -135,7 +135,7 @@ class RunCliExample {
             ])
         }
         if (doImportOSMPbf) {
-            new Import_OSM_Pbf().exec(connection, [
+            new Import_OSM().exec(connection, [
                     "pathFile"        : osmFile,
                     "targetSRID"      : srid,
                     "ignoreGround": true,

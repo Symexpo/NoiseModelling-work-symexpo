@@ -23,7 +23,7 @@ class CalculateMatsimAgentExposure {
                 "receiversTable": "ACTIVITIES_RECEIVERS",
                 "outTableName" : "EXPOSURES",
                 "dataTable": "RESULT_GEOM",
-                "timeSlice": "quarter", // DEN, hour, quarter,
+                "timeBinSize": 900, // DEN, hour, quarter,
                 "plotOneAgentId": 162448,
                 // "plotOneAgentId": 228798,
         ])

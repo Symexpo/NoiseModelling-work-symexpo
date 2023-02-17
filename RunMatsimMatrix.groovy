@@ -7,12 +7,13 @@ import org.h2.Driver
 import org.h2gis.functions.factory.H2GISFunctions
 import org.locationtech.jts.geom.Geometry
 import org.noise_planet.noisemodelling.wps.Database_Manager.Clean_Database
-import org.noise_planet.noisemodelling.wps.Experimental_Matsim.Agent_Contribution_Matrix_Slow
-import org.noise_planet.noisemodelling.wps.Experimental_Matsim.Agent_Exposure_Matrix_Slow
-import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_OSM_Pbf
+import org.noise_planet.noisemodelling.wps.Experimental_Matsim.Agent_Contribution_Matrix
+import org.noise_planet.noisemodelling.wps.Experimental_Matsim.Agent_Exposure_Matrix
+import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_OSM
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import java.nio.file.Files
 import java.nio.file.Paths
 import java.sql.*
 
@@ -164,8 +165,8 @@ class RunMatsimMatrix {
         doCreateReceiversFromMatsim = false;
         doCalculateNoisePropagation = false;
         doCalculateNoiseMap = false;
-        doCalculateExposure = false;
-        doCalculateMatrix = true;
+        doCalculateExposure = true;
+        doCalculateMatrix = false;
 
         agentList = "872069, 872070, 1100866, 1289626, 1002159, 1002158, 1029421, 1029420, 1029419, 1028515, 1028517, 1028514, 1028516, 988177, 988179, 988176, 988178, 879394, 964561, 964558, 964562, 964560, 964559, 1059341, 1099340, 1099339, 868024, 868025, 868023, 868022, 947174, 1050060, 939226, 939227, 870376, 870377, 1121548, 1121546, 1121545, 1121547, 1121544, 991358, 991357, 991356, 1116621, 1116622, 1116620, 857491, 857492, 1090079, 1090078, 1044649, 1044650, 1020288, 1020287, 1020289, 1020286, 1121021, 1121022, 857072, 952833, 952830, 952832, 952831, 869311, 869310, 869313, 869312, 869314, 869315, 1120076, 852330, 852329, 852331, 980203, 980204, 980202, 1118170, 1118169, 1118171, 1118172, 1107530, 1107527, 1107528, 1107529, 1107531, 887111, 887109, 887107, 887108, 887110, 974406, 937461, 1112354, 1112353, 899845, 899844, 956527, 1022414, 1022413, 1022415, 1022412, 1107062, 1107060, 1107061, 857429, 857428, 1048021, 1048022, 854816, 856925, 856928, 856926, 856927, 896586, 1059556, 1059555, 1051260, 1051261, 1051259, 1051262, 943267, 943270, 943269, 943266, 943268, 998540, 998541, 933554, 933555, 1057611, 1057612, 1057614, 1057613, 1057615, 1053746, 1053748, 1053745, 1053744, 1053747, 1044118, 1044117, 1044116, 947801, 947797, 947799, 947800, 947798, 1016094, 1121765, 1121764, 1107051, 1107052, 1107053, 852801, 980543, 980542, 1005676, 1005675, 1028169, 1028170, 1112286, 868401, 873947, 1086867, 1048583, 923542, 923541, 923539, 923540, 925084, 925083, 925082, 863377, 863376, 863378, 868189, 868188, 945626, 945624, 945625, 1018602, 866417, 866418, 908684, 908685, 1075774, 1075775, 946899, 944751, 944752, 1020208, 1008149, 1008148, 1008150, 1093268, 946451, 946452, 845714, 1014745, 962323, 1106821, 1028994, 1028993, 1109563, 1109564, 890020, 890019, 917199, 929954, 1290008, 971839, 971840, 982576, 982575, 956486, 956488, 956487, 956485, 883057, 883055, 883056, 883058, 915573, 915576, 915574, 915575, 931042, 931039, 931040, 931041, 860423, 927806, 1093063, 1010021, 1033351, 880257, 880256, 922855, 925594, 925593, 901985, 1062585, 1062584, 1050062, 1114349, 1108761, 1108760, 1108762, 1108763, 1040064, 1040063, 988342, 988343, 1088857, 1088858, 1088856, 945629, 945628, 945627, 909948, 1289649, 1064820, 1092690, 964364, 964365, 1053389, 1053390, 1053391, 946547, 946548, 972005, 972006, 843378, 944312, 944310, 944311, 888972, 888971, 998051, 998050, 905926, 905927, 952668, 952667, 952666, 1059495, 1081859, 1121376, 994016, 1006572, 950527, 904471, 904470, 1057182, 1119662, 890613, 890612, 1088629, 1088628, 937532, 1098450, 1293733, 1294534, 907332, 948424, 874100, 1060179, 1001304, 920001, 930585, 931413, 931412, 847921, 897807, 901698, 901699, 971546, 913262, 1096954, 1096955, 1105255, 1105254, 977508, 906058, 1111598, 850325, 843999, 843997, 843998, 997734, 924469, 1072052, 1072053, 898978, 985393, 1045439, 1045438, 1085260, 1058674, 939073, 967884, 926038, 926040, 926039, 1293266, 1102394, 866419, 866420, 1289666, 1057353, 991096, 905242, 916400, 971547, 1054134, 1054135, 883081, 959045, 1037557, 874259, 874258, 914293, 960861, 960860, 847175, 1034352, 1034353, 1033698, 972500, 1035131, 1035132, 982523, 859003, 956513, 963105, 1108418, 1108417, 1108416, 1004566, 1004565, 1029212, 851729, 1112923, 922263, 922264, 860371, 1093062, 906709, 1054625, 910404, 1064838, 1064839, 874532, 1038575, 849736, 991122, 939072, 966821, 937470, 937469, 954735, 1092595, 923258, 1296068, 1071955, 1071956, 848184, 848185, 940173, 869680, 1006295, 1124273, 1124274, 1124275, 960715, 1037603, 1037344, 1289652, 872281, 1057746, 965132, 965133, 989053, 989054, 910841, 1028923, 859196, 931692, 1057756, 905219, 905220, 922857, 1106679, 1106678, 1110664, 885240, 885241, 973742, 891450, 1051967, 1051966, 904370, 1086445, 874018, 1008209, 984684, 920975, 920976, 1082125, 1097820, 908008, 1076247, 986486, 1022918, 1294617, 1289695, 1120357, 1065562, 884414, 1007780, 983319, 1295124, 1022409, 1010738, 923039, 1055967, 1022668, 913366, 849297, 1004267, 1295120, 881324, 1012567, 1293957, 995354"
 //        agentList = "945629"
@@ -276,13 +277,15 @@ class RunMatsimMatrix {
             H2GISFunctions.load(connection);
         }
 
+        Files.createDirectories(Paths.get(resultsFolder))
+
         if (doCleanDB) {
             new Clean_Database().exec(connection, [
                     "areYouSure": "yes"
             ])
         }
         if (doImportOSMPbf) {
-            new Import_OSM_Pbf().exec(connection, [
+            new Import_OSM().exec(connection, [
                     "pathFile"        : osmFile,
                     "targetSRID"      : srid,
                     "ignoreGround": true,
@@ -506,7 +509,7 @@ class RunMatsimMatrix {
                 String matrixTableName = "EXPOSURE_MATRIX"
                 Sql sql = new Sql(connection)
                 sql.execute("DROP TABLE IF EXISTS " + matrixTableName)
-                new Agent_Exposure_Matrix_Slow().exec(connection, [
+                new Agent_Exposure_Matrix().exec(connection, [
                         "experiencedPlansFile"  : Paths.get(matsimFolder, "output_experienced_plans.xml.gz"),
                         "plansFile"             : Paths.get(matsimFolder, "output_plans.xml.gz"),
                         "personsCsvFile"        : Paths.get(matsimFolder, "output_persons.csv.gz"),
@@ -518,7 +521,7 @@ class RunMatsimMatrix {
                         "timeSlice"             : timeSlice, // DEN, hour, quarter,
                         "agentsList"            : agentList,
                 ])
-                new Agent_Contribution_Matrix_Slow().exec(connection, [
+                new Agent_Contribution_Matrix().exec(connection, [
                         "experiencedPlansFile"  : Paths.get(matsimFolder, "output_experienced_plans.xml.gz"),
                         "plansFile"             : Paths.get(matsimFolder, "output_plans.xml.gz"),
                         "personsCsvFile"        : Paths.get(matsimFolder, "output_persons.csv.gz"),
@@ -530,7 +533,6 @@ class RunMatsimMatrix {
                         "timeSlice"             : timeSlice, // DEN, hour, quarter,
                         "agentsList"            : agentList,
                 ])
-
             }
         }
 
