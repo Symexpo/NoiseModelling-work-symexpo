@@ -5,9 +5,14 @@ import groovy.sql.Sql
 import org.h2.Driver
 import org.h2gis.functions.factory.H2GISFunctions
 import org.locationtech.jts.geom.Geometry
+import org.noise_planet.noisemodelling.wps.Acoustic_Tools.Create_Isosurface
 import org.noise_planet.noisemodelling.wps.Database_Manager.Clean_Database
+import org.noise_planet.noisemodelling.wps.Experimental_Matsim.Noise_From_Attenuation_Matrix
+import org.noise_planet.noisemodelling.wps.Import_and_Export.Export_Table
 import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_File
 import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_OSM
+import org.noise_planet.noisemodelling.wps.NoiseModelling.Noise_level_from_source
+import org.noise_planet.noisemodelling.wps.Receivers.Delaunay_Grid
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -30,6 +35,8 @@ class RunMatsimConstruction {
     static boolean doExportResults = false;
     static boolean doTrafficSimulation = false;
     static boolean doChantierSimulation = false;
+
+    static boolean doIsoNoiseMap = false;
 
     // all flags inside doSimulation
     static boolean doImportMatsimTraffic = true;
@@ -84,25 +91,26 @@ class RunMatsimConstruction {
         doExportRoads = false;
         doExportBuildings = false;
 
-        doTrafficSimulation = false;
+        doTrafficSimulation = true;
 
         // all flags inside doTrafficSimulation
-        doImportMatsimTraffic = true;
-        doCreateReceiversFromMatsim = true;
-        doCalculateNoisePropagation = true;
-        doCalculateNoiseMap = true;
-        doCalculateExposure = true;
+        doImportMatsimTraffic = false;
+        doCreateReceiversFromMatsim = false;
+        doCalculateNoisePropagation = false;
+        doCalculateNoiseMap = false;
+        doIsoNoiseMap = true
+        doCalculateExposure = false;
 
         doChantierSimulation = false;
 
         // all flags inside doChantierSimulation
-        doChantierSimulationPropagation = true;
-        doChantierSimulationEmission = true;
-        doChantierSimulationNoiseMap = true;
+        doChantierSimulationPropagation = false;
+        doChantierSimulationEmission = false;
+        doChantierSimulationNoiseMap = false;
 
-        doCompareExposureWithConstruction = true
+        doCompareExposureWithConstruction = false
 
-        doExportResults = true;
+        doExportResults = false;
 
         run(dbName, osmFile, matsimFolder, inputsFolder, resultsFolder, srid, populationFactor)
     }
@@ -248,7 +256,6 @@ class RunMatsimConstruction {
                         "timeBinSize"     : timeBinSize
                 ])
             }
-
             if (doCalculateExposure) {
                 CalculateMatsimAgentExposure.calculateMatsimAgentExposure(connection, [
                         "experiencedPlansFile"  : Paths.get(matsimFolder, "output_experienced_plans.xml.gz"),
@@ -260,6 +267,92 @@ class RunMatsimConstruction {
                         "dataTable"             : "RESULT_GEOM",
                         "timeBinSize"           : timeBinSize,
                 ])
+            }
+
+            if (doIsoNoiseMap) {
+                new Delaunay_Grid().exec(connection, [
+                        "tableBuilding": "BUILDINGS",
+                        "sourcesTableName": "MATSIM_ROADS",
+                        "outputTableName": "ISO_RECEIVERS"
+                ])
+                new Noise_level_from_source().exec(connection, [
+                        "tableBuilding"     : "BUILDINGS",
+                        "tableReceivers"    : "ISO_RECEIVERS",
+                        "tableSources"      : "SOURCES_0DB",
+                        "confMaxSrcDist"    : maxSrcDist,
+                        "confMaxReflDist"   : maxReflDist,
+                        "confReflOrder"     : reflOrder,
+                        "confSkipLevening"  : true,
+                        "confSkipLnight"    : true,
+                        "confSkipLden"      : true,
+                        "confThreadNumber"  : 16,
+                        "confExportSourceId": true,
+                        "confDiffVertical"  : diffVertical,
+                        "confDiffHorizontal": diffHorizontal
+                ]);
+                new Sql(connection).execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_ISO_MAP")
+                new Noise_From_Attenuation_Matrix().exec(connection, [
+                        "matsimRoads"     : "MATSIM_ROADS",
+                        "matsimRoadsLw"   : "MATSIM_ROADS_LW",
+                        "attenuationTable": "ATTENUATION_ISO_MAP",
+                        "receiversTable"  : "ISO_RECEIVERS",
+                        "outTableName"    : "RESULT_ISO_MAP",
+                        "timeBinSize"     : timeBinSize
+                ])
+                Sql sql = new Sql(connection)
+                String dataTable = "RESULT_ISO_MAP"
+                String resultTable = "TIME_CONTOURING_NOISE_MAP"
+
+                sql.execute(String.format("DROP TABLE %s IF EXISTS", resultTable))
+                String create_query = "CREATE TABLE " + resultTable + '''(
+                        PK integer PRIMARY KEY AUTO_INCREMENT,
+                        CELL_ID integer,
+                        THE_GEOM geometry,
+                        ISOLVL integer,
+                        ISOLABEL varchar,
+                        TIME integer
+                    )
+                '''
+                sql.execute(create_query)
+
+                ensureIndex(connection, dataTable, "THE_GEOM", true)
+                for (int time = 0 ; time < 86400; time += timeBinSize) {
+                    String timeString = time.toString();
+                    String timeDataTable = dataTable + "_" + timeString
+                    String contourDataTable = "CONTOURING_NOISE_MAP_" + timeString
+
+                    sql.execute(String.format("DROP TABLE %s IF EXISTS", timeDataTable))
+                    String query = "CREATE TABLE " + timeDataTable + '''(
+                            PK integer PRIMARY KEY AUTO_INCREMENT,
+                            THE_GEOM geometry,
+                            HZ63 double precision,
+                            HZ125 double precision,
+                            HZ250 double precision,
+                            HZ500 double precision,
+                            HZ1000 double precision,
+                            HZ2000 double precision,
+                            HZ4000 double precision,
+                            HZ8000 double precision,
+                            TIME integer,
+                            LAEQ double precision,
+                            LEQ double precision
+                        )
+                        AS SELECT r.IDRECEIVER as PK, r.THE_GEOM, r.HZ63, r.HZ125, r.HZ250, r.HZ500, r.HZ1000, r.HZ2000, r.HZ4000, r.HZ8000, r.TIME, r.LEQA as LAEQ, r.LEQ
+                        FROM ''' + dataTable + " r WHERE r.LEQA >= 0 AND r.TIME=" + time + ""
+
+                    sql.execute(query)
+                    new Create_Isosurface().exec(connection, [
+                            "resultTable": timeDataTable
+                    ])
+                    sql.execute("INSERT INTO " + resultTable + "(CELL_ID, THE_GEOM, ISOLVL, ISOLABEL, TIME) SELECT cm.CELL_ID, cm.THE_GEOM, cm.ISOLVL, cm.ISOLABEL, " + time + " FROM CONTOURING_NOISE_MAP cm")
+                    sql.execute(String.format("DROP TABLE %s IF EXISTS", "CONTOURING_NOISE_MAP"))
+                    sql.execute(String.format("DROP TABLE %s IF EXISTS", timeDataTable))
+
+                    new Export_Table().exec(connection, [
+                            "tableToExport": "TIME_CONTOURING_NOISE_MAP",
+                            "exportPath"   : Paths.get(resultsFolder, "TIME_CONTOURING_NOISE_MAP.shp")
+                    ]);
+                }
             }
         }
 

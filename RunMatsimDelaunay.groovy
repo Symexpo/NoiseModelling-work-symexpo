@@ -276,7 +276,7 @@ class RunMatsimDelaunay {
                         "receiversTableName": "RECEIVERS",
                         "height": 4.0,
                         "fenceTableName" : postgis ? null : "BUILDINGS"
-                ])
+                ]);
                 ImportActivitesFromMatsim.importActivitesFromMatsim(connection, [
                         "facilitiesPath": Paths.get(matsimFolder, "output_facilities.xml.gz"),
                         "SRID"          : srid,

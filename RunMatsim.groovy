@@ -5,9 +5,15 @@ import groovy.sql.Sql
 import org.apache.commons.cli.*
 import org.h2.Driver
 import org.h2gis.functions.factory.H2GISFunctions
+import org.noise_planet.noisemodelling.wps.Acoustic_Tools.Create_Isosurface
 import org.noise_planet.noisemodelling.wps.Database_Manager.Clean_Database
+import org.noise_planet.noisemodelling.wps.Experimental_Matsim.Noise_From_Attenuation_Matrix
+import org.noise_planet.noisemodelling.wps.Import_and_Export.Export_Table
 import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_File
 import org.noise_planet.noisemodelling.wps.Import_and_Export.Import_OSM
+import org.noise_planet.noisemodelling.wps.NoiseModelling.Noise_level_from_source
+import org.noise_planet.noisemodelling.wps.Receivers.Building_Grid
+import org.noise_planet.noisemodelling.wps.Receivers.Delaunay_Grid
 
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -37,8 +43,13 @@ class RunMatsim {
     static boolean doCalculateNoisePropagation = true;
     static boolean doCalculateNoiseMap = true;
     static boolean doCalculateExposure = true;
+    static boolean doIsoNoiseMap = true;
 
-    static int timeBinSize = 900
+
+    static int timeBinSize = 900;
+    static int timeBinMin = 0;
+    static int timeBinMax = 86400;
+
     static String receiversMethod = "closest"  // random, closest
     static String ignoreAgents = ""
 
@@ -53,8 +64,9 @@ class RunMatsim {
 //        runNantesEdgt20p()
 //        runNantesEdgt100p()
 //        runNantesEdgt1p()
-//        runLyonL63VEdgt20p()
-        runChampignyEntd100p()
+        runLyonL63VEdgt20p()
+//        runLyonCityEdgt20p()
+//        runChampignyEntd100p()
         // cli(args)
     }
 
@@ -158,6 +170,36 @@ class RunMatsim {
         doCleanDB = false;
         doImportOSMPbf = false;
 
+        doExportRoads = false;
+        doExportBuildings = false;
+
+        doTrafficSimulation = true;
+        doExportResults = false;
+
+        // all flags inside doSimulation
+        doImportMatsimTraffic = false;
+        doCreateReceiversFromMatsim = false;
+        doCalculateNoisePropagation = false;
+        doCalculateNoiseMap = false;
+        doCalculateExposure = false;
+        doIsoNoiseMap = true;
+
+        run(dbName, osmFile, matsimFolder, inputsFolder, resultsFolder, srid, populationFactor)
+    }
+
+    public static void runLyonCityEdgt20p() {
+
+        String dbName = "file:///D:/SYMEXPO/matsim-lyon/edgt_20p/L63V/noisemodelling/noisemodelling"
+        String osmFile = "D:\\SYMEXPO\\osm_maps\\L63V.osm.pbf";
+        String inputsFolder = "D:\\SYMEXPO\\matsim-lyon\\edgt_20p\\L63V\\noisemodelling\\inputs\\"
+        String resultsFolder = "D:\\SYMEXPO\\matsim-lyon\\edgt_20p\\L63V\\noisemodelling\\results\\"
+        String matsimFolder = "D:\\SYMEXPO\\matsim-lyon\\edgt_20p\\L63V\\simulation_output\\"
+        String srid = 2154;
+        double populationFactor = 0.20;
+
+        doCleanDB = false;
+        doImportOSMPbf = false;
+
         doExportRoads = true;
         doExportBuildings = true;
 
@@ -170,6 +212,7 @@ class RunMatsim {
         doCalculateNoisePropagation = true;
         doCalculateNoiseMap = true;
         doCalculateExposure = true;
+        doIsoNoiseMap = true;
 
         run(dbName, osmFile, matsimFolder, inputsFolder, resultsFolder, srid, populationFactor)
     }
@@ -301,7 +344,7 @@ class RunMatsim {
         }
         else {
             File dbFile = new File(URI.create(dbName));
-            String databasePath = "jdbc:h2:" + dbFile.getAbsolutePath() + ";";
+            String databasePath = "jdbc:h2:" + dbFile.getAbsolutePath() + ";AUTO_SERVER=TRUE";
             Driver.load();
             connection = DriverManager.getConnection(databasePath, "", "");
             H2GISFunctions.load(connection);
@@ -350,6 +393,8 @@ class RunMatsim {
                         "outTableName"     : "MATSIM_ROADS",
                         "link2GeometryFile": Paths.get(matsimFolder, "detailed_network.csv"), // absolute path
                         "timeBinSize"      : timeBinSize,
+                        "timeBinMin"       : timeBinMin,
+                        "timeBinMax"       : timeBinMax,
                         "skipUnused"       : "true",
                         "exportTraffic"    : "true",
                         "SRID"             : srid,
@@ -359,7 +404,7 @@ class RunMatsim {
                 ]);
             }
             if (doCreateReceiversFromMatsim) {
-                CreateReceiversOnBuildings.createReceiversOnBuildings(connection, [
+                new Building_Grid().exec(connection, [
                         "delta"            : 5.0,
                         "tableBuilding": "BUILDINGS",
                         "receiversTableName": "RECEIVERS",
@@ -416,7 +461,9 @@ class RunMatsim {
                         "attenuationTable": "ATTENUATION_TRAFFIC",
                         "receiversTable"  : "ACTIVITIES_RECEIVERS",
                         "outTableName"    : "RESULT_GEOM",
-                        "timeBinSize"     : timeBinSize
+                        "timeBinSize"     : timeBinSize,
+                        "timeBinMin"      : timeBinMin,
+                        "timeBinMax"      : timeBinMax,
                 ])
             }
 
@@ -430,9 +477,100 @@ class RunMatsim {
                         "outTableName"          : "EXPOSURES",
                         "dataTable"             : "RESULT_GEOM",
                         "timeBinSize"           : timeBinSize,
+                        "timeBinMin"            : timeBinMin,
+                        "timeBinMax"            : timeBinMax,
                 ])
             }
+
+            if (doIsoNoiseMap) {
+//                new Delaunay_Grid().exec(connection, [
+//                        "tableBuilding": "BUILDINGS",
+//                        "sourcesTableName": "MATSIM_ROADS",
+//                        "outputTableName": "ISO_RECEIVERS"
+//                ])
+//                new Noise_level_from_source().exec(connection, [
+//                        "tableBuilding"     : "BUILDINGS",
+//                        "tableReceivers"    : "ISO_RECEIVERS",
+//                        "tableSources"      : "SOURCES_0DB",
+//                        "confMaxSrcDist"    : maxSrcDist,
+//                        "confMaxReflDist"   : maxReflDist,
+//                        "confReflOrder"     : reflOrder,
+//                        "confSkipLevening"  : true,
+//                        "confSkipLnight"    : true,
+//                        "confSkipLden"      : true,
+//                        "confThreadNumber"  : 16,
+//                        "confExportSourceId": true,
+//                        "confDiffVertical"  : diffVertical,
+//                        "confDiffHorizontal": diffHorizontal
+//                ]);
+//                new Sql(connection).execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_ISO_MAP")
+//                new Noise_From_Attenuation_Matrix().exec(connection, [
+//                        "matsimRoads"     : "MATSIM_ROADS",
+//                        "matsimRoadsLw"   : "MATSIM_ROADS_LW",
+//                        "attenuationTable": "ATTENUATION_ISO_MAP",
+//                        "receiversTable"  : "ISO_RECEIVERS",
+//                        "outTableName"    : "RESULT_ISO_MAP",
+//                        "timeBinSize"     : timeBinSize,
+//                        "timeBinMin"      : timeBinMin,
+//                        "timeBinMax"      : timeBinMax,
+//                ])
+                Sql sql = new Sql(connection)
+                String dataTable = "RESULT_ISO_MAP"
+                String resultTable = "TIME_CONTOURING_NOISE_MAP"
+
+                sql.execute(String.format("DROP TABLE %s IF EXISTS", resultTable))
+                String create_query = "CREATE TABLE " + resultTable + '''(
+                        PK integer PRIMARY KEY AUTO_INCREMENT,
+                        CELL_ID integer,
+                        THE_GEOM geometry,
+                        ISOLVL integer,
+                        ISOLABEL varchar,
+                        TIME integer
+                    )
+                '''
+                sql.execute(create_query)
+
+                ensureIndex(connection, dataTable, "THE_GEOM", true)
+                for (int time = 0 ; time < 86400; time += timeBinSize) {
+                    String timeString = time.toString();
+                    String timeDataTable = dataTable + "_" + timeString
+
+                    sql.execute(String.format("DROP TABLE %s IF EXISTS", timeDataTable))
+                    String query = "CREATE TABLE " + timeDataTable + '''(
+                            PK integer PRIMARY KEY AUTO_INCREMENT,
+                            THE_GEOM geometry,
+                            HZ63 double precision,
+                            HZ125 double precision,
+                            HZ250 double precision,
+                            HZ500 double precision,
+                            HZ1000 double precision,
+                            HZ2000 double precision,
+                            HZ4000 double precision,
+                            HZ8000 double precision,
+                            TIME integer,
+                            LAEQ double precision,
+                            LEQ double precision
+                        )
+                        AS SELECT r.IDRECEIVER as PK, r.THE_GEOM, r.HZ63, r.HZ125, r.HZ250, r.HZ500, r.HZ1000, r.HZ2000, r.HZ4000, r.HZ8000, r.TIME, r.LEQA as LAEQ, r.LEQ
+                        FROM ''' + dataTable + " r WHERE r.TIME=" + time + ""
+
+                    sql.execute(query)
+                    new Create_Isosurface().exec(connection, [
+                            "resultTable": timeDataTable
+                    ])
+                    sql.execute("INSERT INTO " + resultTable + "(CELL_ID, THE_GEOM, ISOLVL, ISOLABEL, TIME) SELECT cm.CELL_ID, cm.THE_GEOM, cm.ISOLVL, cm.ISOLABEL, " + time + " FROM CONTOURING_NOISE_MAP cm")
+                    sql.execute(String.format("DROP TABLE %s IF EXISTS", "CONTOURING_NOISE_MAP"))
+                    sql.execute(String.format("DROP TABLE %s IF EXISTS", timeDataTable))
+
+                }
+
+                new Export_Table().exec(connection, [
+                        "tableToExport": "TIME_CONTOURING_NOISE_MAP",
+                        "exportPath"   : Paths.get(resultsFolder, "TIME_CONTOURING_NOISE_MAP.shp")
+                ]);
+            }
         }
+
         if (doExportResults) {
             ExportTable.exportTable(connection, [
                     "tableToExport": "RESULT_GEOM",

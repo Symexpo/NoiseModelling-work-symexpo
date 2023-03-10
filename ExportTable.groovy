@@ -1,24 +1,31 @@
 package org.noise_planet.noisemodelling.work
 
+import org.h2.Driver
 import org.h2gis.functions.factory.H2GISDBFactory
+import org.h2gis.functions.factory.H2GISFunctions
 import org.h2gis.utilities.JDBCUtilities
 import org.noise_planet.noisemodelling.wps.Import_and_Export.Export_Table
 
 import java.nio.file.Paths
 import java.sql.Connection
+import java.sql.DriverManager
 
 class ExportTable {
 
     public static void main(String[] args) {
 
         Connection connection;
-        String dbName = "file:///D:/SYMEXPO/matsim-nantes/edgt_20p/nantes_aire_urbaine/noisemodelling/noisemodelling"
-        String resultsFolder = "D:\\SYMEXPO\\matsim-nantes\\edgt_20p\\nantes_aire_urbaine\\noisemodelling\\results\\"
+        String dbName = "file:///D:/SYMEXPO/matsim-94/entd_100p/champigny/noisemodelling/noisemodelling"
+        String resultsFolder = "D:\\SYMEXPO\\matsim-94\\entd_100p\\champigny\\noisemodelling\\results\\"
 
-        connection = JDBCUtilities.wrapConnection(H2GISDBFactory.openSpatialDataBase(dbName));
+        File dbFile = new File(URI.create(dbName));
+        String databasePath = "jdbc:h2:" + dbFile.getAbsolutePath() + ";";
+        Driver.load();
+        connection = DriverManager.getConnection(databasePath, "", "");
+        H2GISFunctions.load(connection);
         exportTable(connection, [
-                "tableToExport": "MAP_BUILDINGS_GEOM",
-                "exportPath"   : Paths.get(resultsFolder, "MAP_BUILDINGS_GEOM.geojson")
+                "tableToExport": "TIME_CONTOURING_NOISE_MAP",
+                "exportPath"   : Paths.get(resultsFolder, "TIME_CONTOURING_NOISE_MAP.shp")
         ]);
     }
 
