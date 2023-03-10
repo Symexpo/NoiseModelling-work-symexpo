@@ -483,37 +483,37 @@ class RunMatsim {
             }
 
             if (doIsoNoiseMap) {
-//                new Delaunay_Grid().exec(connection, [
-//                        "tableBuilding": "BUILDINGS",
-//                        "sourcesTableName": "MATSIM_ROADS",
-//                        "outputTableName": "ISO_RECEIVERS"
-//                ])
-//                new Noise_level_from_source().exec(connection, [
-//                        "tableBuilding"     : "BUILDINGS",
-//                        "tableReceivers"    : "ISO_RECEIVERS",
-//                        "tableSources"      : "SOURCES_0DB",
-//                        "confMaxSrcDist"    : maxSrcDist,
-//                        "confMaxReflDist"   : maxReflDist,
-//                        "confReflOrder"     : reflOrder,
-//                        "confSkipLevening"  : true,
-//                        "confSkipLnight"    : true,
-//                        "confSkipLden"      : true,
-//                        "confThreadNumber"  : 16,
-//                        "confExportSourceId": true,
-//                        "confDiffVertical"  : diffVertical,
-//                        "confDiffHorizontal": diffHorizontal
-//                ]);
-//                new Sql(connection).execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_ISO_MAP")
-//                new Noise_From_Attenuation_Matrix().exec(connection, [
-//                        "matsimRoads"     : "MATSIM_ROADS",
-//                        "matsimRoadsLw"   : "MATSIM_ROADS_LW",
-//                        "attenuationTable": "ATTENUATION_ISO_MAP",
-//                        "receiversTable"  : "ISO_RECEIVERS",
-//                        "outTableName"    : "RESULT_ISO_MAP",
-//                        "timeBinSize"     : timeBinSize,
-//                        "timeBinMin"      : timeBinMin,
-//                        "timeBinMax"      : timeBinMax,
-//                ])
+                new Delaunay_Grid().exec(connection, [
+                        "tableBuilding": "BUILDINGS",
+                        "sourcesTableName": "MATSIM_ROADS",
+                        "outputTableName": "ISO_RECEIVERS"
+                ])
+                new Noise_level_from_source().exec(connection, [
+                        "tableBuilding"     : "BUILDINGS",
+                        "tableReceivers"    : "ISO_RECEIVERS",
+                        "tableSources"      : "SOURCES_0DB",
+                        "confMaxSrcDist"    : maxSrcDist,
+                        "confMaxReflDist"   : maxReflDist,
+                        "confReflOrder"     : reflOrder,
+                        "confSkipLevening"  : true,
+                        "confSkipLnight"    : true,
+                        "confSkipLden"      : true,
+                        "confThreadNumber"  : 16,
+                        "confExportSourceId": true,
+                        "confDiffVertical"  : diffVertical,
+                        "confDiffHorizontal": diffHorizontal
+                ]);
+                new Sql(connection).execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_ISO_MAP")
+                new Noise_From_Attenuation_Matrix().exec(connection, [
+                        "matsimRoads"     : "MATSIM_ROADS",
+                        "matsimRoadsLw"   : "MATSIM_ROADS_LW",
+                        "attenuationTable": "ATTENUATION_ISO_MAP",
+                        "receiversTable"  : "ISO_RECEIVERS",
+                        "outTableName"    : "RESULT_ISO_MAP",
+                        "timeBinSize"     : timeBinSize,
+                        "timeBinMin"      : timeBinMin,
+                        "timeBinMax"      : timeBinMax,
+                ])
                 Sql sql = new Sql(connection)
                 String dataTable = "RESULT_ISO_MAP"
                 String resultTable = "TIME_CONTOURING_NOISE_MAP"
