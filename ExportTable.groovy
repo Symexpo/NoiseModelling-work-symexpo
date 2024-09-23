@@ -15,17 +15,17 @@ class ExportTable {
     public static void main(String[] args) {
 
         Connection connection;
-        String dbName = "file:///D:/SYMEXPO/matsim-94/entd_100p/champigny/noisemodelling/noisemodelling"
-        String resultsFolder = "D:\\SYMEXPO\\matsim-94\\entd_100p\\champigny\\noisemodelling\\results\\"
+        String dbName = "file:///D:/SYMEXPO/matsim-lyon/edgt_20p/L63V/noisemodelling/noisemodelling"
+        String resultsFolder = "D:\\SYMEXPO\\matsim-lyon\\edgt_20p\\L63V\\noisemodelling\\results\\"
 
         File dbFile = new File(URI.create(dbName));
-        String databasePath = "jdbc:h2:" + dbFile.getAbsolutePath() + ";";
+        String databasePath = "jdbc:h2:" + dbFile.getAbsolutePath() + ";AUTO_SERVER=TRUE";
         Driver.load();
         connection = DriverManager.getConnection(databasePath, "", "");
         H2GISFunctions.load(connection);
         exportTable(connection, [
-                "tableToExport": "TIME_CONTOURING_NOISE_MAP",
-                "exportPath"   : Paths.get(resultsFolder, "TIME_CONTOURING_NOISE_MAP.shp")
+                "tableToExport": "EXPOSURES_SEQUENCE",
+                "exportPath"   : Paths.get(resultsFolder, "EXPOSURES_SEQUENCE.geojson")
         ]);
     }
 

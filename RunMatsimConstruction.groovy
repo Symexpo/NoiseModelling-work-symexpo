@@ -1,5 +1,6 @@
 package org.noise_planet.noisemodelling.work
 
+import groovy.sql.BatchingStatementWrapper
 import groovy.sql.GroovyRowResult
 import groovy.sql.Sql
 import org.h2.Driver
@@ -50,6 +51,8 @@ class RunMatsimConstruction {
     static boolean doChantierSimulationEmission = true;
     static boolean doChantierSimulationNoiseMap = true;
 
+    static boolean doIsoNoiseMapConstruction = true;
+
     static boolean doCompareExposureWithConstruction = true
 
     static int timeBinSize = 3600;
@@ -65,6 +68,120 @@ class RunMatsimConstruction {
 
     public static void main(String[] args) {
         runChampignyEntd100p()
+//        runHomeExposure()
+    }
+
+    public static void runHomeExposure() {
+        String dbName = "file:///D:/SYMEXPO/matsim-94/entd_100p/champigny/noisemodelling/noisemodelling"
+        String osmFile = "D:\\SYMEXPO\\osm_maps\\champigny.osm.pbf";
+        String inputsFolder = "D:\\SYMEXPO\\matsim-94\\entd_100p\\champigny\\noisemodelling\\inputs\\"
+        String resultsFolder = "D:\\SYMEXPO\\matsim-94\\entd_100p\\champigny\\noisemodelling\\results\\"
+        String matsimFolder = "D:\\SYMEXPO\\matsim-94\\entd_100p\\champigny\\simulation_output"
+        String srid = 2154;
+        double populationFactor = 1.0;
+
+        timeBinSize = 900
+
+        reflOrder = 1
+        maxReflDist = 50
+        maxSrcDist = 750
+        diffHorizontal = true
+
+        Connection connection;
+        File dbFile = new File(URI.create(dbName));
+        String databasePath = "jdbc:h2:" + dbFile.getAbsolutePath() + ";AUTO_SERVER=TRUE";
+        Driver.load();
+        connection = DriverManager.getConnection(databasePath, "", "");
+        H2GISFunctions.load(connection);
+
+        Logger logger = LoggerFactory.getLogger("org.noise_planet.noisemodelling")
+
+        Sql sql = new Sql(connection);
+
+        sql.execute("CREATE INDEX IF NOT EXISTS R_TRAFFIC_IDRECEIVER_TIME_IDX ON PUBLIC.RESULT_GEOM (IDRECEIVER,TIME);")
+        sql.execute("CREATE INDEX IF NOT EXISTS R_CONSTRUCT_IDRECEIVER_TIME_IDX ON PUBLIC.RESULT_CONSTRUCTION (IDRECEIVER,TIME);")
+
+        String resultTable = "HOME_EXPOSURES"
+        sql.execute("DROP TABLE " + resultTable + " IF EXISTS")
+
+        String create_query = "CREATE TABLE " + resultTable + '''(
+                PK integer PRIMARY KEY AUTO_INCREMENT,
+                PERSON_ID varchar,
+                ACTIVITY_ID varchar,
+                THE_GEOM Geometry,
+                TIME int,
+                TRAFFIC_LAEQ double,
+                CONSTRUCTION_LAEQ double,
+                TOTAL_LAEQ double,
+                DIFF_LAEQ double
+            )
+        '''
+        sql.execute(create_query)
+//        PreparedStatement insert_stmt = connection.prepareStatement("INSERT INTO " + resultTable + " VALUES (DEFAULT, ?, ?, ?, ?, ?, ?, ?)")
+
+        new Sql(connection).withBatch("INSERT INTO " + resultTable + " VALUES (DEFAULT, :pid, :aid, :geom, :time, :traffic, :construct, :total, :diff)") { BatchingStatementWrapper stmt ->
+
+            int doprint = 1
+            int counter = 0
+            long start = System.currentTimeMillis()
+
+            List<GroovyRowResult> home_activities_rows = sql.rows("SELECT ex.PERSON_ID, ar.PK AS RECEIVER_ID, ar.FACILITY, ar.THE_GEOM FROM ACTIVITIES_RECEIVERS as ar INNER JOIN EXPOSURES ex ON ex.HOME_FACILITY = ar.FACILITY");
+            int nb_homes = home_activities_rows.size()
+            for (GroovyRowResult home_activity : home_activities_rows) {
+
+                if (counter >= doprint) {
+                    doprint *= 2
+                    double elapsed = (System.currentTimeMillis() - start + 1) / 1000
+                    logger.info(String.format("Processing Home %d (max:%d) - elapsed : %ss (%.1fit/s) - eta : %ss",
+                            counter, nb_homes, elapsed, counter / elapsed, (nb_homes - counter) / counter * elapsed))
+                }
+                counter++;
+
+                Long receiver_id = home_activity.getProperty("RECEIVER_ID") as Long;
+                String person_id = home_activity.getProperty("PERSON_ID") as String;
+                String activity_id = home_activity.getProperty("FACILITY") as String;
+                Geometry activity_geom = home_activity.getProperty("THE_GEOM") as Geometry;
+
+                String levels_query = "SELECT rt.LEQA AS TRAFFIC_LAEQ, rc.LEQA AS CONSTRUCTION_LAEQ, rt.TIME FROM RESULT_GEOM rt \n" +
+                        "LEFT JOIN RESULT_CONSTRUCTION rc ON rc.IDRECEIVER = rt.IDRECEIVER AND rc.TIME = rt.TIME \n" +
+                        "WHERE rt.IDRECEIVER = " + receiver_id + ";"
+
+                List<GroovyRowResult> levels_rows = sql.rows(levels_query)
+                for (GroovyRowResult levels : levels_rows) {
+                    int time = levels.getProperty("TIME") as Integer
+                    double traffic_laeq = levels.getProperty("TRAFFIC_LAEQ") as Double
+                    double construction_laeq = -99.0
+                    if (levels.getProperty("CONSTRUCTION_LAEQ") != null) {
+                        construction_laeq = levels.getProperty("CONSTRUCTION_LAEQ") as Double
+                    }
+                    double total_laeq = 10 * Math.log10(Math.pow(10, traffic_laeq / 10) + Math.pow(10, construction_laeq / 10))
+                    double diff_laeq = total_laeq - traffic_laeq
+
+                    stmt.addBatch(
+                            pid: person_id,
+                            aid: activity_id,
+                            geom: activity_geom,
+                            time: time,
+                            traffic: traffic_laeq,
+                            construct: construction_laeq,
+                            total: total_laeq,
+                            diff: diff_laeq
+                    )
+//                    insert_stmt.setString(1, person_id)
+//                    insert_stmt.setString(2, activity_id)
+//                    insert_stmt.setInt(3, time)
+//                    insert_stmt.setDouble(4, traffic_laeq)
+//                    insert_stmt.setDouble(5, construction_laeq)
+//                    insert_stmt.setDouble(6, total_laeq)
+//                    insert_stmt.setDouble(7, diff_laeq)
+//                    insert_stmt.addBatch()
+                }
+//                insert_stmt.executeBatch()
+                if (stmt.getProperty("batchCount") > 0) {
+                    stmt.executeBatch()
+                }
+            }
+        }
     }
 
     public static void runChampignyEntd100p() {
@@ -86,31 +203,33 @@ class RunMatsimConstruction {
 
         doCleanDB = false;
         doImportOSMPbf = false;
-        doImportData = false;
+        doImportData = true;
 
         doExportRoads = false;
         doExportBuildings = false;
 
-        doTrafficSimulation = true;
+        doTrafficSimulation = false;
 
         // all flags inside doTrafficSimulation
         doImportMatsimTraffic = false;
         doCreateReceiversFromMatsim = false;
         doCalculateNoisePropagation = false;
         doCalculateNoiseMap = false;
-        doIsoNoiseMap = true
+        doIsoNoiseMap = false;
         doCalculateExposure = false;
 
-        doChantierSimulation = false;
+        doChantierSimulation = true;
 
         // all flags inside doChantierSimulation
-        doChantierSimulationPropagation = false;
-        doChantierSimulationEmission = false;
-        doChantierSimulationNoiseMap = false;
+        doChantierSimulationPropagation = true;
+        doChantierSimulationEmission = true;
+        doChantierSimulationNoiseMap = true;
 
-        doCompareExposureWithConstruction = false
+        doIsoNoiseMapConstruction = true;
 
-        doExportResults = false;
+        doCompareExposureWithConstruction = true
+
+        doExportResults = true;
 
         run(dbName, osmFile, matsimFolder, inputsFolder, resultsFolder, srid, populationFactor)
     }
@@ -128,7 +247,7 @@ class RunMatsimConstruction {
         }
         else {
             File dbFile = new File(URI.create(dbName));
-            String databasePath = "jdbc:h2:" + dbFile.getAbsolutePath() + ";";
+            String databasePath = "jdbc:h2:" + dbFile.getAbsolutePath() + ";AUTO_SERVER=TRUE";
             Driver.load();
             connection = DriverManager.getConnection(databasePath, "", "");
             H2GISFunctions.load(connection);
@@ -160,9 +279,9 @@ class RunMatsimConstruction {
             ])
             Sql sql = new Sql(connection)
             sql.execute("ALTER TABLE CONSTRUCTION_SOURCES RENAME COLUMN ID TO PK")
-            sql.execute("DROP TABLE IF EXISTS CONSTRUCTION_LW")
+            sql.execute("DROP TABLE CONSTRUCTION_LW IF EXISTS ")
             sql.execute("CREATE TABLE CONSTRUCTION_LW AS SELECT * FROM CSVREAD('" + Paths.get(inputsFolder, "CONSTRUCTION_LW.csv") + "');")
-            sql.execute("DROP TABLE IF EXISTS CONSTRUCTION_PLANNING")
+            sql.execute("DROP TABLE CONSTRUCTION_PLANNING IF EXISTS ")
             sql.execute("CREATE TABLE CONSTRUCTION_PLANNING AS SELECT * FROM CSVREAD('" + Paths.get(inputsFolder, "CONSTRUCTION_PLANNING.csv") + "');")
         }
 
@@ -244,6 +363,7 @@ class RunMatsimConstruction {
                         "confDiffVertical"  : diffVertical,
                         "confDiffHorizontal": diffHorizontal
                 ]);
+                new Sql(connection).execute("DROP TABLE ATTENUATION_TRAFFIC IF EXISTS")
                 new Sql(connection).execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_TRAFFIC")
             }
             if (doCalculateNoiseMap) {
@@ -290,6 +410,7 @@ class RunMatsimConstruction {
                         "confDiffVertical"  : diffVertical,
                         "confDiffHorizontal": diffHorizontal
                 ]);
+                new Sql(connection).execute("DROP TABLE ATTENUATION_ISO_MAP IF EXISTS")
                 new Sql(connection).execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_ISO_MAP")
                 new Noise_From_Attenuation_Matrix().exec(connection, [
                         "matsimRoads"     : "MATSIM_ROADS",
@@ -378,6 +499,7 @@ class RunMatsimConstruction {
                         "confDiffVertical"  : diffVertical,
                         "confDiffHorizontal": diffHorizontal
                 ]);
+                new Sql(connection).execute("DROP TABLE ATTENUATION_CONSTRUCTION IF EXISTS")
                 new Sql(connection).execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_CONSTRUCTION")
             }
             if (doChantierSimulationEmission) {
@@ -580,6 +702,186 @@ class RunMatsimConstruction {
                 sql.execute("ALTER TABLE " + outTableName + " ADD COLUMN LEQA float as 10*log10((power(10,(" + prefix + "63-26.2)/10)+power(10,(" + prefix + "125-16.1)/10)+power(10,(" + prefix + "250-8.6)/10)+power(10,(" + prefix + "500-3.2)/10)+power(10,(" + prefix + "1000)/10)+power(10,(" + prefix + "2000+1.2)/10)+power(10,(" + prefix + "4000+1)/10)+power(10,(" + prefix + "8000-1.1)/10)))")
                 sql.execute("ALTER TABLE " + outTableName + " ADD COLUMN LEQ float as 10*log10((power(10,(" + prefix + "63)/10)+power(10,(" + prefix + "125)/10)+power(10,(" + prefix + "250)/10)+power(10,(" + prefix + "500)/10)+power(10,(" + prefix + "1000)/10)+power(10,(" + prefix + "2000)/10)+power(10,(" + prefix + "4000)/10)+power(10,(" + prefix + "8000)/10)))")
             }
+        }
+
+        if (doIsoNoiseMapConstruction) {
+            new Delaunay_Grid().exec(connection, [
+                    "tableBuilding": "BUILDINGS",
+                    "sourcesTableName": "MATSIM_ROADS",
+                    "outputTableName": "ISO_RECEIVERS"
+            ])
+            new Noise_level_from_source().exec(connection, [
+                    "tableBuilding"     : "BUILDINGS",
+                    "tableReceivers"    : "ISO_RECEIVERS",
+                    "tableSources"      : "CONSTRUCTION_SOURCES_0DB",
+                    "confMaxSrcDist"    : maxSrcDist,
+                    "confMaxReflDist"   : maxReflDist,
+                    "confReflOrder"     : reflOrder,
+                    "confSkipLevening"  : true,
+                    "confSkipLnight"    : true,
+                    "confSkipLden"      : true,
+                    "confThreadNumber"  : 16,
+                    "confExportSourceId": true,
+                    "confDiffVertical"  : diffVertical,
+                    "confDiffHorizontal": diffHorizontal
+            ]);
+            Sql sql = new Sql(connection);
+
+            sql.execute("DROP TABLE ATTENUATION_ISO_MAP_CONSTRUCTION IF EXISTS")
+            sql.execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_ISO_MAP_CONSTRUCTION")
+
+            String outTableName = "RESULT_ISO_CONSTRUCTION"
+            String attenuationTable = "ATTENUATION_ISO_MAP_CONSTRUCTION"
+            String constructionSourceLwTable = "CONSTRUCTION_SOURCES_LW"
+
+            sql.execute(String.format("DROP TABLE %s IF EXISTS", outTableName))
+            String query = "CREATE TABLE " + outTableName + '''(
+                        PK integer PRIMARY KEY AUTO_INCREMENT,
+                        IDRECEIVER integer,
+                        THE_GEOM geometry,
+                        HZ63 double precision,
+                        HZ125 double precision,
+                        HZ250 double precision,
+                        HZ500 double precision,
+                        HZ1000 double precision,
+                        HZ2000 double precision,
+                        HZ4000 double precision,
+                        HZ8000 double precision,
+                        TIME int
+                    )
+                '''
+            sql.execute(query)
+            PreparedStatement insert_stmt = connection.prepareStatement(
+                    "INSERT INTO " + outTableName + " VALUES(DEFAULT, ?, ST_GeomFromText(?, " + srid + "), ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+
+            ensureIndex(connection, attenuationTable, "IDSOURCE", false)
+            ensureIndex(connection, attenuationTable, "IDRECEIVER", false)
+            ensureIndex(connection, constructionSourceLwTable, "IDSOURCE", false)
+
+            Logger logger = LoggerFactory.getLogger("org.noise_planet.noisemodelling")
+            List<String> lw_freqs = ["LW63", "LW125", "LW250", "LW500", "LW1000", "LW2000", "LW4000", "LW8000"]
+
+            long count = 0, do_print = 1
+            List<GroovyRowResult> receivers_res = sql.rows("SELECT * FROM ISO_RECEIVERS");
+
+            long nb_receivers = receivers_res.size()
+            long start = System.currentTimeMillis()
+            for (GroovyRowResult receiver: receivers_res) {
+                long receiver_id = receiver["PK"] as long;
+                Geometry receiver_geom = receiver["THE_GEOM"] as Geometry;
+                Map<Integer, List<Double>> levels = new HashMap<Integer, List<Double>>();
+                List<GroovyRowResult> sources_att_res = sql.rows(String.format("SELECT lg.* FROM %s lg WHERE lg.IDRECEIVER = %d", attenuationTable, receiver_id));
+                long nb_sources = sources_att_res.size();
+                if (nb_sources == 0) {
+                    count++
+                    continue
+                }
+                for (GroovyRowResult sources_att: sources_att_res) {
+                    long source_id = sources_att["IDSOURCE"] as long;
+                    List<Double> attenuation = [
+                            sources_att["HZ63"] as double,
+                            sources_att["HZ125"] as double,
+                            sources_att["HZ250"] as double,
+                            sources_att["HZ500"] as double,
+                            sources_att["HZ1000"] as double,
+                            sources_att["HZ2000"] as double,
+                            sources_att["HZ4000"] as double,
+                            sources_att["HZ8000"] as double,
+                    ];
+                    List<GroovyRowResult> source_lw_res = sql.rows(String.format(
+                            "SELECT cslw.* FROM %s cslw WHERE cslw.IDSOURCE = %d",
+                            constructionSourceLwTable, source_id));
+                    for (GroovyRowResult source_lw: source_lw_res) {
+                        Integer time = source_lw["TIME"] as Integer
+                        if (!levels.containsKey(time)) {
+                            levels[time] = [-99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0] as List<Double>
+                        }
+                        for (i in 0..<8) {
+                            double new_level = (source_lw[lw_freqs[i]] as double) + attenuation[i];
+                            levels[time][i] = 10 * Math.log10( Math.pow(10, levels[time][i] / 10) + Math.pow(10, new_level / 10))
+                        }
+                    }
+                }
+
+                for (int time = 0 ; time < 86400; time += timeBinSize) {
+                    if (!levels.containsKey(time)) {
+                        levels[time] = [-99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0, -99.0] as List<Double>
+                    }
+                    List<Double> ts_levels = levels[time]
+                    insert_stmt.setLong(1, receiver_id)
+                    insert_stmt.setString(2, receiver_geom.toText())
+                    for (i in 0..<8) {
+                        insert_stmt.setDouble(i+3, ts_levels[i])
+                    }
+                    insert_stmt.setInt(11, time)
+                    insert_stmt.execute()
+                }
+                if (count >= do_print) {
+                    double elapsed = (System.currentTimeMillis() - start + 1) / 1000
+                    logger.info(String.format("Processing Receiver %d (max:%d) - elapsed : %ss (%.1fit/s)",
+                            count, nb_receivers, elapsed, count/elapsed))
+                    do_print *= 2
+                }
+                count ++
+            }
+
+            String prefix = "HZ"
+            sql.execute("ALTER TABLE " + outTableName + " ADD COLUMN LEQA float as 10*log10((power(10,(" + prefix + "63-26.2)/10)+power(10,(" + prefix + "125-16.1)/10)+power(10,(" + prefix + "250-8.6)/10)+power(10,(" + prefix + "500-3.2)/10)+power(10,(" + prefix + "1000)/10)+power(10,(" + prefix + "2000+1.2)/10)+power(10,(" + prefix + "4000+1)/10)+power(10,(" + prefix + "8000-1.1)/10)))")
+            sql.execute("ALTER TABLE " + outTableName + " ADD COLUMN LEQ float as 10*log10((power(10,(" + prefix + "63)/10)+power(10,(" + prefix + "125)/10)+power(10,(" + prefix + "250)/10)+power(10,(" + prefix + "500)/10)+power(10,(" + prefix + "1000)/10)+power(10,(" + prefix + "2000)/10)+power(10,(" + prefix + "4000)/10)+power(10,(" + prefix + "8000)/10)))")
+
+            String dataTable = "RESULT_ISO_CONSTRUCTION"
+            String resultTable = "TIME_CONTOURING_NOISE_MAP_CONSTRUCTION"
+
+            sql.execute(String.format("DROP TABLE %s IF EXISTS", resultTable))
+            String create_query = "CREATE TABLE " + resultTable + '''(
+                        PK integer PRIMARY KEY AUTO_INCREMENT,
+                        CELL_ID integer,
+                        THE_GEOM geometry,
+                        ISOLVL integer,
+                        ISOLABEL varchar,
+                        TIME integer
+                    )
+                '''
+            sql.execute(create_query)
+
+            ensureIndex(connection, dataTable, "THE_GEOM", true)
+            for (int time = 0 ; time < 86400; time += timeBinSize) {
+                String timeString = time.toString();
+                String timeDataTable = dataTable + "_" + timeString
+
+                sql.execute(String.format("DROP TABLE %s IF EXISTS", timeDataTable))
+                String create_table_query = "CREATE TABLE " + timeDataTable + '''(
+                            PK integer PRIMARY KEY AUTO_INCREMENT,
+                            THE_GEOM geometry,
+                            HZ63 double precision,
+                            HZ125 double precision,
+                            HZ250 double precision,
+                            HZ500 double precision,
+                            HZ1000 double precision,
+                            HZ2000 double precision,
+                            HZ4000 double precision,
+                            HZ8000 double precision,
+                            TIME integer,
+                            LAEQ double precision,
+                            LEQ double precision
+                        )
+                        AS SELECT r.IDRECEIVER as PK, r.THE_GEOM, r.HZ63, r.HZ125, r.HZ250, r.HZ500, r.HZ1000, r.HZ2000, r.HZ4000, r.HZ8000, r.TIME, r.LEQA as LAEQ, r.LEQ
+                        FROM ''' + dataTable + " r WHERE r.TIME=" + time + ""
+
+                sql.execute(create_table_query)
+                new Create_Isosurface().exec(connection, [
+                        "resultTable": timeDataTable
+                ])
+                sql.execute("INSERT INTO " + resultTable + "(CELL_ID, THE_GEOM, ISOLVL, ISOLABEL, TIME) SELECT cm.CELL_ID, cm.THE_GEOM, cm.ISOLVL, cm.ISOLABEL, " + time + " FROM CONTOURING_NOISE_MAP cm")
+                sql.execute(String.format("DROP TABLE %s IF EXISTS", "CONTOURING_NOISE_MAP"))
+                sql.execute(String.format("DROP TABLE %s IF EXISTS", timeDataTable))
+            }
+
+            new Export_Table().exec(connection, [
+                    "tableToExport": "TIME_CONTOURING_NOISE_MAP_CONSTRUCTION",
+                    "exportPath"   : Paths.get(resultsFolder, "TIME_CONTOURING_NOISE_MAP_CONSTRUCTION.shp")
+            ]);
         }
 
         if (doCompareExposureWithConstruction) {

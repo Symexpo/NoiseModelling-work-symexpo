@@ -45,7 +45,6 @@ class RunMatsim {
     static boolean doCalculateExposure = true;
     static boolean doIsoNoiseMap = true;
 
-
     static int timeBinSize = 900;
     static int timeBinMin = 0;
     static int timeBinMax = 86400;
@@ -62,23 +61,60 @@ class RunMatsim {
 
     public static void main(String[] args) {
 //        runNantesEdgt20p()
-//        runNantesEdgt100p()
+        runNantesEdgt100p()
 //        runNantesEdgt1p()
-        runLyonL63VEdgt20p()
+//        runLyonL63VEdgt20p()
 //        runLyonCityEdgt20p()
+//        runLyonMetropoleEdgt100p()
 //        runChampignyEntd100p()
         // cli(args)
     }
 
+    public static void runLyonMetropoleEdgt100p() {
+
+        String dbName = "file:///D:/SYMEXPO/matsim-lyon/edgt_100p/lyon_metropole/noisemodelling/noisemodelling"
+        String osmFile = "D:\\SYMEXPO\\osm_maps\\lyon_metropole.osm.pbf";
+        String inputsFolder = "D:\\SYMEXPO\\matsim-lyon\\edgt_100p\\lyon_metropole\\noisemodelling\\inputs\\"
+        String resultsFolder = "D:\\SYMEXPO\\matsim-lyon\\edgt_100p\\lyon_metropole\\noisemodelling\\results\\"
+        String matsimFolder = "D:\\SYMEXPO\\matsim-lyon\\edgt_100p\\lyon_metropole\\simulation_output\\"
+
+        String srid = 2154;
+        double populationFactor = 1.0;
+
+        timeBinSize = 900;
+        timeBinMin = 0;
+        timeBinMax = 86400;
+
+        doCleanDB = false;
+        doImportOSMPbf = false;
+
+        doExportRoads = false;
+        doExportBuildings = true;
+
+        doTrafficSimulation = true;
+        doExportResults = true;
+
+        // all flags inside doSimulation
+        doImportMatsimTraffic = false;
+        doCreateReceiversFromMatsim = false;
+        doCalculateNoisePropagation = false;
+        doCalculateNoiseMap = true;
+        doCalculateExposure = true;
+        doIsoNoiseMap = true;
+
+        run(dbName, osmFile, matsimFolder, inputsFolder, resultsFolder, srid, populationFactor)
+    }
+
     public static void runNantesEdgt20p() {
 
-        String dbName = "file:///D:/SYMEXPO/matsim-nantes/edgt_20p/nantes_aire_urbaine/noisemodelling/noisemodelling"
+        String dbName = "file:///D:/SYMEXPO/matsim-nantes/edgt_20p/nantes_commune/noisemodelling/noisemodelling"
         String osmFile = "D:\\SYMEXPO\\osm_maps\\nantes_aire_urbaine.osm.pbf";
-        String inputsFolder = "D:\\SYMEXPO\\matsim-nantes\\edgt_20p\\nantes_aire_urbaine\\noisemodelling\\inputs\\"
-        String resultsFolder = "D:\\SYMEXPO\\matsim-nantes\\edgt_20p\\nantes_aire_urbaine\\noisemodelling\\results\\"
-        String matsimFolder = "D:\\SYMEXPO\\matsim-nantes\\edgt_20p\\nantes_aire_urbaine\\simulation_output\\"
+        String inputsFolder = "D:\\SYMEXPO\\matsim-nantes\\edgt_20p\\nantes_commune\\noisemodelling\\inputs\\"
+        String resultsFolder = "D:\\SYMEXPO\\matsim-nantes\\edgt_20p\\nantes_commune\\noisemodelling\\results\\"
+        String matsimFolder = "D:\\SYMEXPO\\matsim-nantes\\edgt_20p\\nantes_commune\\simulation_output\\"
         String srid = 2154;
         double populationFactor = 0.20;
+
 
         doCleanDB = false;
         doImportOSMPbf = false;
@@ -94,7 +130,8 @@ class RunMatsim {
         doCreateReceiversFromMatsim = false;
         doCalculateNoisePropagation = false;
         doCalculateNoiseMap = false;
-        doCalculateExposure = true;
+        doCalculateExposure = false;
+        doIsoNoiseMap = true;
 
         run(dbName, osmFile, matsimFolder, inputsFolder, resultsFolder, srid, populationFactor)
     }
@@ -109,21 +146,21 @@ class RunMatsim {
         String srid = 2154;
         double populationFactor = 1.0;
 
-        doCleanDB = false;
-        doImportOSMPbf = false;
+        doCleanDB = true;
+        doImportOSMPbf = true;
 
-        doExportRoads = true;
-        doExportBuildings = true;
+        doExportRoads = false;
+        doExportBuildings = false;
 
-        doTrafficSimulation = false;
-        doExportResults = false;
+        doTrafficSimulation = true;
+        doExportResults = true;
 
         // all flags inside doSimulation
-        doImportMatsimTraffic = false;
-        doCreateReceiversFromMatsim = false;
-        doCalculateNoisePropagation = false;
-        doCalculateNoiseMap = false;
-        doCalculateExposure = false;
+        doImportMatsimTraffic = true;
+        doCreateReceiversFromMatsim = true;
+        doCalculateNoisePropagation = true;
+        doCalculateNoiseMap = true;
+        doCalculateExposure = true;
 
         run(dbName, osmFile, matsimFolder, inputsFolder, resultsFolder, srid, populationFactor)
     }
@@ -334,6 +371,7 @@ class RunMatsim {
     public static void run(String dbName, String osmFile, String matsimFolder, String inputsFolder, String resultsFolder, String srid, double populationFactor) {
 
         Connection connection;
+        Sql sql;
 
         if (postgis) {
             String url = "jdbc:postgresql://localhost/" + postgis_db;
@@ -395,8 +433,8 @@ class RunMatsim {
                         "timeBinSize"      : timeBinSize,
                         "timeBinMin"       : timeBinMin,
                         "timeBinMax"       : timeBinMax,
-                        "skipUnused"       : "true",
-                        "exportTraffic"    : "true",
+                        "skipUnused"       : true,
+                        "exportTraffic"    : true,
                         "SRID"             : srid,
                         "ignoreAgents"     : ignoreAgents,
                         "perVehicleLevel"  : true,
@@ -452,6 +490,7 @@ class RunMatsim {
                         "confDiffVertical"  : diffVertical,
                         "confDiffHorizontal": diffHorizontal
                 ]);
+                new Sql(connection).execute("DROP TABLE IF EXISTS ATTENUATION_TRAFFIC")
                 new Sql(connection).execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_TRAFFIC")
             }
             if (doCalculateNoiseMap) {
@@ -503,6 +542,7 @@ class RunMatsim {
                         "confDiffVertical"  : diffVertical,
                         "confDiffHorizontal": diffHorizontal
                 ]);
+                new Sql(connection).execute("DROP TABLE IF EXISTS ATTENUATION_ISO_MAP")
                 new Sql(connection).execute("ALTER TABLE LDAY_GEOM RENAME TO ATTENUATION_ISO_MAP")
                 new Noise_From_Attenuation_Matrix().exec(connection, [
                         "matsimRoads"     : "MATSIM_ROADS",
@@ -514,7 +554,7 @@ class RunMatsim {
                         "timeBinMin"      : timeBinMin,
                         "timeBinMax"      : timeBinMax,
                 ])
-                Sql sql = new Sql(connection)
+                sql = new Sql(connection)
                 String dataTable = "RESULT_ISO_MAP"
                 String resultTable = "TIME_CONTOURING_NOISE_MAP"
 
@@ -531,7 +571,7 @@ class RunMatsim {
                 sql.execute(create_query)
 
                 ensureIndex(connection, dataTable, "THE_GEOM", true)
-                for (int time = 0 ; time < 86400; time += timeBinSize) {
+                for (int time = timeBinMin ; time < timeBinMax; time += timeBinSize) {
                     String timeString = time.toString();
                     String timeDataTable = dataTable + "_" + timeString
 
@@ -561,12 +601,13 @@ class RunMatsim {
                     sql.execute("INSERT INTO " + resultTable + "(CELL_ID, THE_GEOM, ISOLVL, ISOLABEL, TIME) SELECT cm.CELL_ID, cm.THE_GEOM, cm.ISOLVL, cm.ISOLABEL, " + time + " FROM CONTOURING_NOISE_MAP cm")
                     sql.execute(String.format("DROP TABLE %s IF EXISTS", "CONTOURING_NOISE_MAP"))
                     sql.execute(String.format("DROP TABLE %s IF EXISTS", timeDataTable))
-
                 }
+                sql.execute("ALTER TABLE " + resultTable + " ADD TIME_DATE TIME");
+                sql.execute("UPDATE " + resultTable + " as e SET TIME_DATE = DATEADD( SECOND , e.TIME, PARSEDATETIME('1970-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss'))")
 
                 new Export_Table().exec(connection, [
-                        "tableToExport": "TIME_CONTOURING_NOISE_MAP",
-                        "exportPath"   : Paths.get(resultsFolder, "TIME_CONTOURING_NOISE_MAP.shp")
+                        "tableToExport": "CONTOURING_NOISE_MAP",
+                        "exportPath"   : Paths.get(resultsFolder, "CONTOURING_NOISE_MAP.geojson")
                 ]);
             }
         }
